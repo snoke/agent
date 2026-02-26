@@ -44,6 +44,7 @@ const messages = ref<ChatMessage[]>([
 
 const canSend = computed(() => !isSending.value && input.value.trim().length > 0 && webhookUrl.value.trim().length > 0)
 const canRecord = computed(() => !isSending.value && !isRecording.value && voiceWebhookUrl.value.trim().length > 0)
+const showTyping = computed(() => isSending.value)
 
 let recorder: MediaRecorder | null = null
 let recorderStream: MediaStream | null = null
@@ -195,6 +196,14 @@ function stopVoice() {
           <div class="text">{{ m.text }}</div>
         </div>
       </div>
+      <div v-if="showTyping" class="msg role-agent" aria-hidden="true">
+        <div class="bubble typing" aria-label="Agent is typing">
+          <div class="role">agent</div>
+          <div class="dots">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <footer class="composer">
@@ -303,6 +312,47 @@ input {
 .text {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.typing .role {
+  margin-bottom: 4px;
+}
+
+.dots {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  height: 16px;
+}
+
+.dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.5;
+  animation: typing-bounce 1s infinite ease-in-out;
+}
+
+.dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typing-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 0.8;
+  }
 }
 
 .composer .row {
