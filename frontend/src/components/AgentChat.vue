@@ -38,7 +38,7 @@ const messages = ref<ChatMessage[]>([
   {
     id: randomId(),
     role: 'agent',
-    text: 'Hi, ich bin Agent! KI-Assistent von Stefan. Ich kann dir dabei helfen, ein kurzes Meeting zu arrangieren.',
+    text: 'Hi, ich bin Agent, der KI-Assistent von Stefan. Ich kann dir dabei helfen ein kurzes Meeting zu arrangieren.',
   },
 ])
 
