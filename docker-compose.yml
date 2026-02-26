@@ -29,7 +29,6 @@ services:
       - .env
     volumes:
       - n8n_data:/home/node/.n8n
-      - ./context.txt:/opt/agent/context.txt:ro
     restart: unless-stopped
     networks:
       - internal

@@ -148,25 +148,38 @@
       "id": "voice-fail-node",
       "name": "Voice Transcribe Failed"
     },
-    {
-      "parameters": {
-        "functionCode": "const body = $json.body ?? {};\n\nconst message = body.message ?? body.user_message ?? '';\nconst sessionId = body.sessionId ?? null;\nconst context = body.context ?? {};\n\nconst incomingState = body.state ?? {};\nconst state = {\n  phase: 'idle',\n  booking_intent: false,\n  pending_slot: null,\n  lang: 'en',\n  ...incomingState,\n};\n\nreturn [{ json: { message, sessionId, context, state } }];"
-      },
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
+	    {
+	      "parameters": {
+	        "functionCode": "const body = $json.body ?? {};\n\nconst message = body.message ?? body.user_message ?? '';\nconst sessionId = body.sessionId ?? null;\nconst context = body.context ?? {};\n\nconst incomingState = body.state ?? {};\nconst state = {\n  phase: 'idle',\n  booking_intent: false,\n  pending_slot: null,\n  lang: 'en',\n  ...incomingState,\n};\n\nreturn [{ json: { message, sessionId, context, state } }];"
+	      },
+	      "type": "n8n-nodes-base.function",
+	      "typeVersion": 1,
       "position": [
         -880,
         0
       ],
-      "id": "normalize-node",
-      "name": "Normalize Input"
-    },
-    {
-      "parameters": {
-        "functionCode": "const fs = require('fs');\n\nfunction parseBool(v, defaultValue = true) {\n  if (v === undefined || v === null) return defaultValue;\n  const s = String(v).trim().toLowerCase();\n  if (['1', 'true', 'yes', 'y', 'on'].includes(s)) return true;\n  if (['0', 'false', 'no', 'n', 'off'].includes(s)) return false;\n  return defaultValue;\n}\n\nfunction parseCsv(v) {\n  return String(v ?? '')\n    .split(',')\n    .map((s) => s.trim().toLowerCase())\n    .filter(Boolean);\n}\n\nconst allowed = new Set(['email', 'name', 'phone', 'note']);\nconst requiredInputs = parseCsv($env.REQUIRE_INPUT).filter((x) => allowed.has(x));\nconst optionalInputs = parseCsv($env.OPTIONAL_INPUT).filter((x) => allowed.has(x));\n\nconst policy = {\n  tz: ($env.AGENT_TZ ?? $env.TZ ?? 'Europe/Berlin').toString(),\n  workdays: ($env.AGENT_WORKDAYS ?? '1,2,3,4,5').toString(),\n  workStart: ($env.AGENT_WORK_START ?? '09:00').toString(),\n  workEnd: ($env.AGENT_WORK_END ?? '17:00').toString(),\n  horizonDays: Number($env.AGENT_HORIZON_DAYS ?? 30) || 30,\n  minLeadHours: Number($env.AGENT_MIN_LEAD_HOURS ?? 24) || 24,\n  durationMinutes: 30,\n  createGoogleMeet: parseBool($env.CREATE_GOOGLE_MEET, true),\n  requiredInputs,\n  optionalInputs,\n};\n\nlet agent_context = '';\ntry {\n  const p = ($env.AGENT_CONTEXT_FILE ?? '/opt/agent/context.txt').toString();\n  agent_context = fs.readFileSync(p, 'utf8');\n} catch {\n  // ignore\n}\nagent_context = (agent_context ?? '').toString().trim();\n\nreturn [{ json: { ...$json, policy, agent_context, now_iso: new Date().toISOString() } }];"
-      },
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
+	      "id": "normalize-node",
+	      "name": "Normalize Input"
+	    },
+	    {
+	      "parameters": {
+	        "functionCode": "const agent_context = `Du bist Stefans KI\u2011Buchungsassistent.\n\nDein Hauptzweck: Nutzer k\u00f6nnen hier schnell ein 30\u2011min Meeting mit Stefan organisieren.\nWenn der Nutzer einfach nur Smalltalk macht, antworte kurz freundlich und erkl\u00e4re direkt, dass du Termine mit Stefan buchen kannst, und frage nach einem Wunschtermin (Wochentag + Uhrzeit) oder ob du freie Slots vorschlagen sollst.\nErfinde keine Fakten \u00fcber Stefan (z.B. Alter, Adresse, private Details). Wenn etwas nicht im Kontext steht, sag ehrlich, dass du es nicht wei\u00dft und biete an, stattdessen einen Termin zu buchen.`.trim();\n\nreturn [{ json: { ...$json, agent_context } }];"
+	      },
+	      "type": "n8n-nodes-base.function",
+	      "typeVersion": 1,
+	      "position": [
+	        -770,
+	        0
+	      ],
+	      "id": "agent-context-node",
+	      "name": "Agent Context"
+	    },
+	    {
+	      "parameters": {
+	        "functionCode": "function parseBool(v, defaultValue = true) {\n  if (v === undefined || v === null) return defaultValue;\n  const s = String(v).trim().toLowerCase();\n  if (['1', 'true', 'yes', 'y', 'on'].includes(s)) return true;\n  if (['0', 'false', 'no', 'n', 'off'].includes(s)) return false;\n  return defaultValue;\n}\n\nfunction parseCsv(v) {\n  return String(v ?? '')\n    .split(',')\n    .map((s) => s.trim().toLowerCase())\n    .filter(Boolean);\n}\n\nconst allowed = new Set(['email', 'name', 'phone', 'note']);\nconst requiredInputs = parseCsv($env.REQUIRE_INPUT).filter((x) => allowed.has(x));\nconst optionalInputs = parseCsv($env.OPTIONAL_INPUT).filter((x) => allowed.has(x));\n\nconst policy = {\n  tz: ($env.AGENT_TZ ?? $env.TZ ?? 'Europe/Berlin').toString(),\n  workdays: ($env.AGENT_WORKDAYS ?? '1,2,3,4,5').toString(),\n  workStart: ($env.AGENT_WORK_START ?? '09:00').toString(),\n  workEnd: ($env.AGENT_WORK_END ?? '17:00').toString(),\n  horizonDays: Number($env.AGENT_HORIZON_DAYS ?? 30) || 30,\n  minLeadHours: Number($env.AGENT_MIN_LEAD_HOURS ?? 24) || 24,\n  durationMinutes: 30,\n  createGoogleMeet: parseBool($env.CREATE_GOOGLE_MEET, true),\n  requiredInputs,\n  optionalInputs,\n};\n\nconst agent_context = ($json.agent_context ?? '').toString().trim();\n\nreturn [{ json: { ...$json, policy, agent_context, now_iso: new Date().toISOString() } }];"
+	      },
+	      "type": "n8n-nodes-base.function",
+	      "typeVersion": 1,
       "position": [
         -660,
         0
@@ -952,22 +965,33 @@
         ]
       ]
     },
-    "Normalize Input": {
-      "main": [
-        [
-          {
-            "node": "Policy + Now",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Policy + Now": {
-      "main": [
-        [
-          {
-            "node": "LLM #1 (Decider)",
+	    "Normalize Input": {
+	      "main": [
+	        [
+	          {
+	            "node": "Agent Context",
+	            "type": "main",
+	            "index": 0
+	          }
+	        ]
+	      ]
+	    },
+	    "Agent Context": {
+	      "main": [
+	        [
+	          {
+	            "node": "Policy + Now",
+	            "type": "main",
+	            "index": 0
+	          }
+	        ]
+	      ]
+	    },
+	    "Policy + Now": {
+	      "main": [
+	        [
+	          {
+	            "node": "LLM #1 (Decider)",
             "type": "main",
             "index": 0
           }

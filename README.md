@@ -30,9 +30,8 @@ Voice input:
 - Requires an OpenAI credential in n8n (Credentials → OpenAI) referenced by the workflow nodes.
 
 Agent context:
-- Put extra system context in `context.txt`.
-- The container mounts it to `AGENT_CONTEXT_FILE` (default: `/opt/agent/context.txt`) and injects it into the decider LLM system prompt.
-- Requires `NODE_FUNCTION_ALLOW_BUILTIN=fs` (see `.env.example`) so n8n Function nodes can read the file.
+- The workflow contains an `Agent Context` node that stores the system context string.
+- Edit that node in n8n if you want to change what the agent knows/should say.
 
 ### Workflow requirements
 
