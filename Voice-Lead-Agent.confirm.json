@@ -1,0 +1,1203 @@
+{
+  "id": "YOtXm9XGqA8Zo86K",
+  "name": "Voice-Lead-Agent (confirm + calendar)",
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agent-chat-confirm",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1100,
+        0
+      ],
+      "id": "webhook-node",
+      "name": "Webhook",
+      "webhookId": "agent-chat-confirm-webhook"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agent-chat-confirm-voice",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1100,
+        240
+      ],
+      "id": "voice-webhook-node",
+      "name": "Webhook (voice)",
+      "webhookId": "agent-chat-confirm-voice-webhook"
+    },
+    {
+      "parameters": {
+        "functionCode": "const body = $json.body ?? {};\n\nconst audio_base64 = body.audio_base64 ?? '';\nconst mimeType = body.mimeType ?? 'audio/webm';\nconst fileName = body.fileName ?? 'voice.webm';\n\nconst sessionId = body.sessionId ?? null;\nconst context = body.context ?? {};\n\nconst incomingState = body.state ?? {};\nconst state = {\n  phase: 'idle',\n  booking_intent: false,\n  pending_slot: null,\n  lang: 'en',\n  ...incomingState,\n};\n\nconst binary = audio_base64\n  ? {\n      audio: {\n        data: audio_base64,\n        mimeType,\n        fileName,\n      },\n    }\n  : {};\n\nreturn [{ json: { sessionId, context, state, mimeType, fileName }, binary }];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        240
+      ],
+      "id": "normalize-voice-node",
+      "name": "Normalize Voice Input"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formData",
+              "name": "model",
+              "value": "={{(($env.AGENT_STT_MODEL ?? 'gpt-4o-mini-transcribe').toString().trim()) || 'gpt-4o-mini-transcribe'}}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "audio"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -660,
+        240
+      ],
+      "id": "stt-http-node",
+      "name": "STT (OpenAI)",
+      "credentials": {
+        "openAiApi": {
+          "id": "YrieF7VxwKqYVkuk",
+          "name": "OpenAi account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "const base = $node[\"Normalize Voice Input\"].json ?? {};\nconst state = base.state ?? {};\n\nconst resp = $json ?? {};\n\nlet transcript = '';\nlet stt_error = '';\n\nif (resp?.error?.message) {\n  stt_error = String(resp.error.message);\n}\n\nif (!stt_error) {\n  if (typeof resp?.text === 'string') transcript = resp.text;\n  else if (typeof resp?.body?.text === 'string') transcript = resp.body.text;\n  else if (typeof resp?.data?.text === 'string') transcript = resp.data.text;\n}\n\ntranscript = (transcript ?? '').toString();\nif (!transcript.trim() && !stt_error) stt_error = 'No transcript returned';\n\nreturn [{ json: { ...base, state, transcript, message: transcript, stt_error } }];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -520,
+        240
+      ],
+      "id": "stt-parse-node",
+      "name": "STT Parse"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{!!(($json.transcript ?? '').toString().trim())}}",
+              "operation": "equal",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -440,
+        240
+      ],
+      "id": "if-has-transcript-node",
+      "name": "Has Transcript?"
+    },
+    {
+      "parameters": {
+        "functionCode": "const state = $json.state ?? {};\nconst hint = ($json.stt_error ?? '').toString();\nconst replyBase = 'I could not understand the voice message. Please try again or type it.';\nconst reply = hint ? `${replyBase} (${hint})` : replyBase;\nreturn [{ json: { reply, booking_intent: false, state, transcript: '' } }];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -220,
+        340
+      ],
+      "id": "voice-fail-node",
+      "name": "Voice Transcribe Failed"
+    },
+    {
+      "parameters": {
+        "functionCode": "const body = $json.body ?? {};\n\nconst message = body.message ?? body.user_message ?? '';\nconst sessionId = body.sessionId ?? null;\nconst context = body.context ?? {};\n\nconst incomingState = body.state ?? {};\nconst state = {\n  phase: 'idle',\n  booking_intent: false,\n  pending_slot: null,\n  lang: 'en',\n  ...incomingState,\n};\n\nreturn [{ json: { message, sessionId, context, state } }];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        0
+      ],
+      "id": "normalize-node",
+      "name": "Normalize Input"
+    },
+    {
+      "parameters": {
+        "functionCode": "const fs = require('fs');\n\nfunction parseBool(v, defaultValue = true) {\n  if (v === undefined || v === null) return defaultValue;\n  const s = String(v).trim().toLowerCase();\n  if (['1', 'true', 'yes', 'y', 'on'].includes(s)) return true;\n  if (['0', 'false', 'no', 'n', 'off'].includes(s)) return false;\n  return defaultValue;\n}\n\nfunction parseCsv(v) {\n  return String(v ?? '')\n    .split(',')\n    .map((s) => s.trim().toLowerCase())\n    .filter(Boolean);\n}\n\nconst allowed = new Set(['email', 'name', 'phone', 'note']);\nconst requiredInputs = parseCsv($env.REQUIRE_INPUT).filter((x) => allowed.has(x));\nconst optionalInputs = parseCsv($env.OPTIONAL_INPUT).filter((x) => allowed.has(x));\n\nconst policy = {\n  tz: ($env.AGENT_TZ ?? $env.TZ ?? 'Europe/Berlin').toString(),\n  workdays: ($env.AGENT_WORKDAYS ?? '1,2,3,4,5').toString(),\n  workStart: ($env.AGENT_WORK_START ?? '09:00').toString(),\n  workEnd: ($env.AGENT_WORK_END ?? '17:00').toString(),\n  horizonDays: Number($env.AGENT_HORIZON_DAYS ?? 30) || 30,\n  durationMinutes: 30,\n  createGoogleMeet: parseBool($env.CREATE_GOOGLE_MEET, true),\n  requiredInputs,\n  optionalInputs,\n};\n\nlet agent_context = '';\ntry {\n  const p = ($env.AGENT_CONTEXT_FILE ?? '/opt/agent/context.txt').toString();\n  agent_context = fs.readFileSync(p, 'utf8');\n} catch {\n  // ignore\n}\nagent_context = (agent_context ?? '').toString().trim();\n\nreturn [{ json: { ...$json, policy, agent_context, now_iso: new Date().toISOString() } }];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -660,
+        0
+      ],
+      "id": "policy-node",
+      "name": "Policy + Now"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify((() => {\n  const baseSystemLines = [\n    'You are a booking assistant. Return ONLY strict JSON.',\n    '',\n    'Output schema:',\n    '{',\n    '  \"language\": string,',\n    '  \"reply\": string,',\n    '  \"booking_intent\": boolean,',\n    '  \"confirm_booking\": boolean,',\n    '  \"datetime_text\": string|null,',\n    '  \"state_update\": object',\n    '}',\n    '',\n    'Rules:',\n    '- language MUST be the user\\'s language as a 2-letter ISO 639-1 code when possible (e.g. \"fr\", \"de\", \"en\").',\n    '- reply MUST be in language.',\n    '- If language is \"de\": use informal \"du\" (not \"Sie\").',\n    '- If booking_intent is false: confirm_booking MUST be false and datetime_text MUST be null.',\n    '- If state.phase==\"awaiting_confirm\" and user clearly confirms: confirm_booking MUST be true.',\n    '- If user provides a date/time: set booking_intent=true AND set datetime_text to the date/time phrase.',\n    '  - Treat bare hours like \"at 10\" / \"um 10\" / \"Dienstag 12\" as a time (10:00 / 12:00).',\n    '  - Examples that MUST set datetime_text: \"next Monday at 10\", \"Dienstag 12:30\", \"Tuesday 14:00\".',\n    '- If user wants booking but no date/time: set booking_intent=true and datetime_text=null.',\n    '- If user asks about weekends / Saturday / Sunday (without a specific time): reply that bookings are only on workdays and during policy hours, and ask for an alternative.',\n    '- When you ask the user for a date/time, include the allowed window from policy (workdays + workStart-workEnd).',\n    '- Reply should be short (1-2 sentences).',\n    '- No markdown, no backticks, no extra keys.',\n  ];\n\n  const agentContext = ($json.agent_context ?? '').toString().trim();\n  const systemLines = agentContext\n    ? baseSystemLines.concat(['', 'Agent context (system):', agentContext])\n    : baseSystemLines;\n\n  return {\n    model: 'gpt-4o-mini',\n    temperature: 0.2,\n    messages: [\n      {\n        role: 'system',\n        content: systemLines.join('\\n'),\n      },\n      {\n        role: 'user',\n        content: JSON.stringify({\n          now_iso: $json.now_iso,\n          message: $json.message,\n          state: $json.state,\n          policy: $json.policy,\n        }),\n      },\n    ],\n    response_format: { type: 'json_object' },\n  };\n})())}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -440,
+        0
+      ],
+      "id": "decider-http-node",
+      "name": "LLM #1 (Decider)",
+      "credentials": {
+        "openAiApi": {
+          "id": "YrieF7VxwKqYVkuk",
+          "name": "OpenAi account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "const input = $node['Policy + Now'].json;\nconst state = input.state ?? {};\n\nfunction normLang(value) {\n  const s = (value ?? '').toString().trim().toLowerCase();\n  const m = s.match(/^[a-z]{2}/);\n  return m ? m[0] : 'en';\n}\n\nfunction parseInputs(value) {\n  const allowed = new Set(['email', 'name', 'phone', 'note']);\n  if (Array.isArray(value)) {\n    return value\n      .map((x) => String(x).trim().toLowerCase())\n      .filter((x) => allowed.has(x));\n  }\n  if (typeof value === 'string') {\n    return value\n      .split(',')\n      .map((x) => x.trim().toLowerCase())\n      .filter((x) => allowed.has(x));\n  }\n  return [];\n}\n\nfunction getContact(s) {\n  const c = s?.contact;\n  if (c && typeof c === 'object') return { ...c };\n  return {};\n}\n\nfunction extractEmail(text) {\n  const m = String(text ?? '').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/i);\n  return m ? m[0] : null;\n}\n\nfunction extractPhone(text) {\n  const raw = String(text ?? '');\n  const m = raw.match(/(\\+?\\d[\\d\\s\\-().]{6,}\\d)/);\n  if (!m) return null;\n\n  const candidate = m[1].trim();\n  const digits = candidate.replace(/\\D/g, '');\n  if (digits.length < 7) return null;\n\n  return candidate;\n}\n\nfunction looksLikeSkip(text) {\n  const s = String(text ?? '').trim().toLowerCase();\n  if (!s) return false;\n  return ['skip', 'no', 'nope', 'nah', 'nein', 'n', 'later', 'sp\\u00e4ter', 'nicht', 'keine', 'kein'].includes(s);\n}\n\nfunction looksLikeYes(text) {\n  const s = String(text ?? '').trim().toLowerCase();\n  if (!s) return false;\n  return ['yes', 'y', 'ja', 'j', 'ok', 'okay', 'sure', 'klar', 'bitte', 'oui', 'si'].includes(s);\n}\n\nfunction looksLikeNo(text) {\n  const s = String(text ?? '').trim().toLowerCase();\n  if (!s) return false;\n  return ['no', 'n', 'nein', 'nope', 'nah', 'non'].includes(s);\n}\n\nfunction missingFields(fields, contact) {\n  return fields.filter((f) => {\n    const v = contact?.[f];\n    return typeof v !== 'string' || !v.trim();\n  });\n}\n\nfunction getAttempts(s) {\n  const a = s?.input_attempts;\n  if (a && typeof a === 'object') return { ...a };\n  return {};\n}\n\nfunction bumpAttempt(attempts, field) {\n  const n = Number(attempts[field] ?? 0) || 0;\n  return { ...attempts, [field]: n + 1 };\n}\n\nfunction askRequiredPrompt(field, attempt) {\n  if (field === 'email') {\n    return attempt > 0\n      ? 'That does not look like an email address. Please send a valid email like name@company.com.'\n      : \"Before I book this, what's your email address?\";\n  }\n  if (field === 'name') {\n    return attempt > 0\n      ? 'Please send the name I should use for the booking (e.g. your full name or company name).'\n      : 'Before I book this, what name should I use for the booking?';\n  }\n  if (field === 'phone') {\n    return attempt > 0\n      ? 'That does not look like a valid phone number. Please send a number like +49 170 1234567.'\n      : \"Before I book this, what's the best phone number to reach you?\";\n  }\n  if (field === 'note') {\n    return attempt > 0\n      ? 'Please send a short note I should attach to the calendar invite.'\n      : 'Before I book this, do you want me to attach a note to the calendar invite? If yes, tell me the note text.';\n  }\n  return 'Before I book this, please share the required details.';\n}\n\nfunction offerOptionalPrompt(field) {\n  if (field === 'note') return 'Optional: would you like to add a note to the calendar invite?';\n  if (field === 'email') return 'Optional: would you like to add your email address to the invite?';\n  if (field === 'phone') return 'Optional: would you like to add a phone number to the invite?';\n  if (field === 'name') return 'Optional: would you like to add a name to the invite?';\n  return 'Optional: would you like to add more details to the invite?';\n}\n\nfunction askOptionalValuePrompt(field, attempt) {\n  if (field === 'note') {\n    return attempt > 0\n      ? 'Please send the note text, or say \"skip\".'\n      : 'What note should I add? (Or say \"skip\")';\n  }\n  if (field === 'email') {\n    return attempt > 0\n      ? 'Please send a valid email address (e.g. name@company.com), or say \"skip\".'\n      : 'What email address should I add? (Or say \"skip\")';\n  }\n  if (field === 'phone') {\n    return attempt > 0\n      ? 'Please send a valid phone number (e.g. +49 170 1234567), or say \"skip\".'\n      : 'What phone number should I add? (Or say \"skip\")';\n  }\n  if (field === 'name') {\n    return attempt > 0\n      ? 'Please send the name, or say \"skip\".'\n      : 'What name should I add? (Or say \"skip\")';\n  }\n  return attempt > 0 ? 'Please send the value, or say \"skip\".' : 'What should I add? (Or say \"skip\")';\n}\n\nfunction finalize(reply, booking_intent, extraState = {}) {\n  const mergedState = { ...state, ...extraState, booking_intent };\n  if (!mergedState.lang) mergedState.lang = normLang(state.lang ?? 'en');\n\n  return [\n    {\n      json: {\n        reply,\n        booking_intent,\n        state: mergedState,\n        route: 'final',\n        datetime_text: null,\n        confirm_booking: false,\n        policy: input.policy,\n        now_iso: input.now_iso,\n        sessionId: input.sessionId ?? null,\n        message: input.message ?? '',\n      },\n    },\n  ];\n}\n\nfunction routeConfirm(reply, mergedState) {\n  return [\n    {\n      json: {\n        ...input,\n        reply,\n        booking_intent: true,\n        confirm_booking: true,\n        datetime_text: null,\n        state: mergedState,\n        route: 'confirm',\n      },\n    },\n  ];\n}\n\nfunction routeFinalAsk(reply, mergedState) {\n  return [\n    {\n      json: {\n        ...input,\n        reply,\n        booking_intent: true,\n        confirm_booking: false,\n        datetime_text: null,\n        state: mergedState,\n        route: 'final',\n      },\n    },\n  ];\n}\n\nfunction parseDeciderResponse() {\n  if ($json?.error?.message) {\n    return { error: `LLM error: ${$json.error.message}` };\n  }\n\n  if (!$json || typeof $json !== 'object' || !Array.isArray($json.choices)) {\n    return { error: 'LLM is currently unavailable.' };\n  }\n\n  const content = $json.choices?.[0]?.message?.content;\n  try {\n    return { parsed: JSON.parse((content ?? '').toString()) };\n  } catch {\n    return { error: (content ?? 'LLM returned non-JSON.').toString() };\n  }\n}\n\nconst dec = parseDeciderResponse();\nif (dec.error) return finalize(dec.error, false);\n\nconst parsed = dec.parsed ?? {};\n\nconst booking_intent = parsed?.booking_intent === true;\nconst confirm_booking = parsed?.confirm_booking === true;\nconst datetime_text = typeof parsed?.datetime_text === 'string' ? parsed.datetime_text : null;\nconst reply = typeof parsed?.reply === 'string' ? parsed.reply : 'OK';\nconst state_update = parsed?.state_update && typeof parsed.state_update === 'object' ? parsed.state_update : {};\nconst language = typeof parsed?.language === 'string' ? parsed.language : null;\n\nconst lang = normLang(state_update.lang ?? language ?? state.lang ?? 'en');\nlet newState = { ...state, ...state_update, booking_intent, lang };\n\nconst message = (input.message ?? '').toString();\nconst requiredInputs = parseInputs(input.policy?.requiredInputs);\nconst optionalInputs = parseInputs(input.policy?.optionalInputs);\n\nlet contact = getContact(newState);\n\nconst foundEmail = extractEmail(message);\nif (foundEmail) contact.email = foundEmail;\n\nconst foundPhone = extractPhone(message);\nif (foundPhone) contact.phone = foundPhone;\n\nconst attempts = getAttempts(newState);\n\nfunction setFieldValue(field, value) {\n  const v = (value ?? '').toString().trim();\n  if (!v) return false;\n\n  if (field === 'email') {\n    const e = extractEmail(v);\n    if (!e) return false;\n    contact.email = e;\n    return true;\n  }\n\n  if (field === 'phone') {\n    const p = extractPhone(v);\n    if (!p) return false;\n    contact.phone = p;\n    return true;\n  }\n\n  if (field === 'name') {\n    const candidate = v;\n    if (!candidate || candidate.length > 80) return false;\n    if (extractEmail(candidate) || extractPhone(candidate)) return false;\n    contact.name = candidate;\n    return true;\n  }\n\n  if (field === 'note') {\n    const candidate = v;\n    if (!candidate || candidate.length > 1000) return false;\n    contact.note = candidate;\n    return true;\n  }\n\n  return false;\n}\n\nfunction getOptionalDeclined(s) {\n  const v = s?.optional_declined;\n  if (Array.isArray(v)) return v.map((x) => String(x).trim().toLowerCase()).filter(Boolean);\n  return [];\n}\n\nfunction nextOptionalField() {\n  const declined = new Set(getOptionalDeclined(newState));\n  const required = new Set(requiredInputs);\n  const list = optionalInputs.filter((f) => !required.has(f));\n\n  for (const f of list) {\n    if (declined.has(f)) continue;\n    const v = contact?.[f];\n    if (typeof v === 'string' && v.trim()) continue;\n    return f;\n  }\n\n  return null;\n}\n\nfunction declineOptional(field) {\n  const declined = new Set(getOptionalDeclined(newState));\n  declined.add(field);\n  newState.optional_declined = Array.from(declined);\n}\n\nfunction proceedAfterInputs() {\n  // All required and optional steps done => book now.\n  const proceedState = { ...newState, contact, input_attempts: attempts, phase: 'awaiting_confirm' };\n  return routeConfirm('Booking now.', proceedState);\n}\n\n// If we are collecting a specific field (required or optional), handle it deterministically.\nif (newState?.collect_field && (newState.phase === 'collect_required' || newState.phase === 'collect_optional_value')) {\n  const field = String(newState.collect_field).trim().toLowerCase();\n\n  // Optional collection can be skipped.\n  const isOptional = newState.phase === 'collect_optional_value';\n  if (isOptional && looksLikeSkip(message)) {\n    declineOptional(field);\n    newState.collect_field = null;\n    newState.phase = 'collect_optional_offer';\n  } else {\n    const ok = setFieldValue(field, message);\n    if (!ok) {\n      const nextAttempts = bumpAttempt(attempts, field);\n      newState = { ...newState, contact, input_attempts: nextAttempts };\n      const attempt = Number(nextAttempts[field] ?? 1);\n      const prompt = isOptional ? askOptionalValuePrompt(field, attempt) : askRequiredPrompt(field, attempt);\n      return routeFinalAsk(prompt, newState);\n    }\n\n    // Field collected.\n    newState.collect_field = null;\n  }\n\n  // After collecting/skipping, continue required/optional flow.\n  const stillMissingReq = missingFields(requiredInputs, contact);\n  if (stillMissingReq.length > 0) {\n    const f = stillMissingReq[0];\n    const nextAttempts = bumpAttempt(attempts, f);\n    const prompt = askRequiredPrompt(f, Number(nextAttempts[f] ?? 1) - 1);\n    newState = { ...newState, contact, phase: 'collect_required', confirmed_booking: true, collect_field: f, input_attempts: nextAttempts };\n    return routeFinalAsk(prompt, newState);\n  }\n\n  // No required missing.\n  if (newState.confirmed_booking === true && newState?.pending_slot?.start && newState?.pending_slot?.end) {\n    const nextOpt = nextOptionalField();\n    if (nextOpt) {\n      newState = { ...newState, contact, phase: 'collect_optional_offer', optional_offer_field: nextOpt, confirmed_booking: true, input_attempts: attempts };\n      return routeFinalAsk(offerOptionalPrompt(nextOpt), newState);\n    }\n    return proceedAfterInputs();\n  }\n}\n\n// If we are offering an optional field, interpret yes/no/value.\nif (newState.phase === 'collect_optional_offer' && newState.optional_offer_field) {\n  const field = String(newState.optional_offer_field).trim().toLowerCase();\n\n  // If user provided the value directly, accept it.\n  const okDirect = setFieldValue(field, message);\n  if (okDirect) {\n    newState.optional_offer_field = null;\n    const nextOpt = nextOptionalField();\n    if (nextOpt) {\n      newState = { ...newState, contact, phase: 'collect_optional_offer', optional_offer_field: nextOpt, confirmed_booking: true, input_attempts: attempts };\n      return routeFinalAsk(offerOptionalPrompt(nextOpt), newState);\n    }\n    return proceedAfterInputs();\n  }\n\n  if (looksLikeNo(message) || looksLikeSkip(message)) {\n    declineOptional(field);\n    newState.optional_offer_field = null;\n\n    const nextOpt = nextOptionalField();\n    if (nextOpt) {\n      newState = { ...newState, contact, phase: 'collect_optional_offer', optional_offer_field: nextOpt, confirmed_booking: true, input_attempts: attempts };\n      return routeFinalAsk(offerOptionalPrompt(nextOpt), newState);\n    }\n\n    return proceedAfterInputs();\n  }\n\n  // If user says yes, ask for the value.\n  if (looksLikeYes(message)) {\n    const nextAttempts = bumpAttempt(attempts, field);\n    newState = { ...newState, contact, phase: 'collect_optional_value', optional_offer_field: null, collect_field: field, confirmed_booking: true, input_attempts: nextAttempts };\n    return routeFinalAsk(askOptionalValuePrompt(field, 0), newState);\n  }\n\n  // Unclear response: ask again.\n  newState = { ...newState, contact, input_attempts: attempts };\n  return routeFinalAsk(offerOptionalPrompt(field), newState);\n}\n\nnewState = { ...newState, contact, input_attempts: attempts };\n\n// If user already confirmed booking but we still need required fields, start/continue collecting.\nif (\n  (newState.phase === 'collect_required' || newState.confirmed_booking === true) &&\n  newState?.pending_slot?.start &&\n  newState?.pending_slot?.end\n) {\n  const missing = missingFields(requiredInputs, contact);\n  if (missing.length > 0) {\n    const f = missing[0];\n    const nextAttempts = bumpAttempt(attempts, f);\n    const prompt = askRequiredPrompt(f, Number(nextAttempts[f] ?? 1) - 1);\n    const gatedState = { ...newState, phase: 'collect_required', confirmed_booking: true, collect_field: f, input_attempts: nextAttempts };\n    return routeFinalAsk(prompt, gatedState);\n  }\n\n  // Required OK, but if we confirmed booking we may still want optional inputs.\n  if (newState.confirmed_booking === true) {\n    const nextOpt = nextOptionalField();\n    if (nextOpt) {\n      const optState = { ...newState, phase: 'collect_optional_offer', optional_offer_field: nextOpt, confirmed_booking: true, input_attempts: attempts };\n      return routeFinalAsk(offerOptionalPrompt(nextOpt), optState);\n    }\n\n    return proceedAfterInputs();\n  }\n}\n\n// Gate booking confirmation on required/optional fields.\nif (booking_intent && confirm_booking && newState.phase === 'awaiting_confirm' && newState?.pending_slot?.start && newState?.pending_slot?.end) {\n  const missing = missingFields(requiredInputs, contact);\n  if (missing.length > 0) {\n    const f = missing[0];\n    const nextAttempts = bumpAttempt(attempts, f);\n    const gatedState = { ...newState, phase: 'collect_required', confirmed_booking: true, collect_field: f, input_attempts: nextAttempts };\n    const prompt = askRequiredPrompt(f, 0);\n    return routeFinalAsk(prompt, gatedState);\n  }\n\n  const nextOpt = nextOptionalField();\n  if (nextOpt) {\n    const optState = { ...newState, phase: 'collect_optional_offer', confirmed_booking: true, optional_offer_field: nextOpt, input_attempts: attempts };\n    return routeFinalAsk(offerOptionalPrompt(nextOpt), optState);\n  }\n\n  return [\n    {\n      json: {\n        ...input,\n        reply,\n        booking_intent,\n        confirm_booking: true,\n        datetime_text: null,\n        state: newState,\n        route: 'confirm',\n      },\n    },\n  ];\n}\n\nif (booking_intent && datetime_text) {\n  return [\n    {\n      json: {\n        ...input,\n        reply,\n        booking_intent,\n        confirm_booking: false,\n        datetime_text,\n        state: newState,\n        route: 'parse_datetime',\n      },\n    },\n  ];\n}\n\nif (booking_intent && !datetime_text) {\n  return [\n    {\n      json: {\n        ...input,\n        reply,\n        booking_intent,\n        confirm_booking: false,\n        datetime_text: null,\n        state: newState,\n        route: 'ask_datetime',\n      },\n    },\n  ];\n}\n\nreturn [\n  {\n    json: {\n      ...input,\n      reply,\n      booking_intent: false,\n      confirm_booking: false,\n      datetime_text: null,\n      state: newState,\n      route: 'final',\n    },\n  },\n];\n"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -220,
+        0
+      ],
+      "id": "route-node",
+      "name": "Route"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"route\"]}}",
+              "operation": "equal",
+              "value2": "confirm"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "if-confirm-node",
+      "name": "Route: Confirm?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"route\"]}}",
+              "operation": "equal",
+              "value2": "parse_datetime"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "id": "if-parse-node",
+      "name": "Route: Parse?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"route\"]}}",
+              "operation": "equal",
+              "value2": "ask_datetime"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "id": "if-ask-node",
+      "name": "Route: Ask Datetime?"
+    },
+    {
+      "parameters": {
+        "functionCode": "const state = $json.state ?? {};\nreturn [{ json: { reply: 'Please provide a weekday and time within working hours (Mon–Fri 09:00–17:00).', booking_intent: true, state } }];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        660,
+        120
+      ],
+      "id": "ask-node",
+      "name": "Ask Datetime"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify({\n  model: 'gpt-4o-mini',\n  temperature: 0.1,\n  messages: [\n    {\n      role: 'system',\n      content: [\n        'You extract a concrete datetime slot from natural language in ANY language. Return ONLY strict JSON.',\n        '',\n        'Output schema:',\n        '{',\n        '  \"start_iso\": string|null,',\n        '  \"end_iso\": string|null,',\n        '  \"label\": string|null,',\n        '  \"confidence\": number,',\n        '  \"need_clarification\": string|null',\n        '}',\n        '',\n        'Rules:',\n        '- If you cannot confidently extract a slot, set start_iso/end_iso null and set need_clarification to a short question.',\n        '- Interpret relative dates using now_iso.',\n        '- Use policy.tz as the timezone context.',\n        '- Slot duration is policy.durationMinutes.',\n        '- Do not enforce workday/hours here (controller validates).',\n        '- If a weekday is given with a bare number like \"Tuesday 12\" / \"Dienstag 12\", interpret 12 as 12:00 (hour), not the day of month, unless explicitly phrased as a date (e.g. \"am 12.\" / \"the 12th\").',\n        '- If ambiguous between date and time, ask for clarification in need_clarification.',\n        '- No markdown, no extra keys.',\n      ].join('\\n'),\n    },\n    {\n      role: 'user',\n      content: JSON.stringify({\n        now_iso: $json.now_iso,\n        datetime_text: $json.datetime_text,\n        policy: $json.policy,\n        duration_minutes: $json.policy.durationMinutes,\n      }),\n    },\n  ],\n  response_format: { type: 'json_object' },\n})}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        660,
+        -140
+      ],
+      "id": "parser-http-node",
+      "name": "LLM #2 (Datetime Parser)",
+      "credentials": {
+        "openAiApi": {
+          "id": "YrieF7VxwKqYVkuk",
+          "name": "OpenAi account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "const input = $node[\"Route\"].json;\nconst state = input.state ?? {};\n\nfunction ask(q) {\n  return [{ json: { reply: q, booking_intent: true, state } }];\n}\n\nif ($json?.error?.message) {\n  return ask(`Parser error: ${$json.error.message}. Please provide a weekday and time.`);\n}\n\nif (!$json || typeof $json !== 'object' || !Array.isArray($json.choices)) {\n  return ask('I could not read the time. Please e.g. \"Monday 11:00\".');\n}\n\nconst content = $json.choices?.[0]?.message?.content;\nlet parsed;\ntry {\n  parsed = JSON.parse((content ?? '').toString());\n} catch {\n  return ask('I could not read the time. Please e.g. \"Monday 11:00\".');\n}\n\nconst start = typeof parsed?.start_iso === 'string' ? parsed.start_iso : null;\nconst end = typeof parsed?.end_iso === 'string' ? parsed.end_iso : null;\nconst label = typeof parsed?.label === 'string' ? parsed.label : null;\nconst confidence = typeof parsed?.confidence === 'number' ? parsed.confidence : 0.5;\nconst need = typeof parsed?.need_clarification === 'string' ? parsed.need_clarification : null;\n\nif (!start || !end || confidence < 0.6) {\n  return ask(need ?? 'What exact time? (Mon–Fri 09:00–17:00)');\n}\n\nreturn [{\n  json: {\n    ...input,\n    slot: {\n      start,\n      end,\n      label: label ?? start,\n      confidence,\n    },\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        880,
+        -140
+      ],
+      "id": "parser-out-node",
+      "name": "Parser Output"
+    },
+    {
+      "parameters": {
+        "functionCode": "const input = $json;\nconst policy = input.policy ?? {};\nconst state = input.state ?? {};\nconst slot = input.slot;\n\nfunction reject(msg) {\n  return [{ json: { reply: msg, booking_intent: true, state } }];\n}\n\nif (!slot?.start || !slot?.end) {\n  return reject('Please provide a weekday and time (Mon–Fri 09:00–17:00).');\n}\n\nconst workdays = (policy.workdays ?? '1,2,3,4,5')\n  .toString()\n  .split(',')\n  .map((s) => Number(s.trim()))\n  .filter((n) => Number.isFinite(n));\n\nfunction parseHHMM(value, fallback) {\n  const m = value?.toString().trim().match(/^(\\d{1,2}):(\\d{2})$/);\n  if (!m) return fallback;\n  const hh = Math.min(23, Math.max(0, Number(m[1])));\n  const mm = Math.min(59, Math.max(0, Number(m[2])));\n  return { hh, mm };\n}\n\nconst ws = parseHHMM(policy.workStart ?? '09:00', { hh: 9, mm: 0 });\nconst we = parseHHMM(policy.workEnd ?? '17:00', { hh: 17, mm: 0 });\nconst horizonDays = Math.max(1, Number(policy.horizonDays ?? 30) || 30);\n\nconst startDate = new Date(slot.start);\nconst endDate = new Date(slot.end);\nif (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime())) {\n  return reject('I could not read the time. Please e.g. \"Monday 11:00\".');\n}\n\nconst now = new Date();\nconst latest = new Date(now.getTime() + horizonDays * 24 * 60 * 60_000);\nif (startDate.getTime() > latest.getTime()) {\n  return reject(`I can only book up to ${horizonDays} days ahead.`);\n}\n\nif (workdays.length && !workdays.includes(startDate.getDay())) {\n  return reject('Bookings are only possible on weekdays (Mon–Fri). Please suggest a weekday.');\n}\n\nconst startMinutes = startDate.getHours() * 60 + startDate.getMinutes();\nconst wsMin = ws.hh * 60 + ws.mm;\nconst weMin = we.hh * 60 + we.mm;\nif (startMinutes < wsMin || startMinutes >= weMin) {\n  const window = `${String(ws.hh).padStart(2, '0')}:${String(ws.mm).padStart(2, '0')}–${String(we.hh).padStart(2, '0')}:${String(we.mm).padStart(2, '0')}`;\n  return reject(`Bookings are only possible within ${window} (Mon–Fri).`);\n}\n\n// Google FreeBusy can treat boundaries as busy. Query a tiny bit inside the slot\n// so back-to-back slots (ending exactly when another starts) are considered available.\nconst padMs = 1;\nconst queryStart = new Date(startDate.getTime() + padMs).toISOString();\nconst queryEnd = new Date(endDate.getTime() - padMs).toISOString();\ninput.slot = {\n  ...slot,\n  queryStart,\n  queryEnd,\n};\n\nreturn [{ json: input }];\n"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        -140
+      ],
+      "id": "policy-validate-node",
+      "name": "Policy Validate Slot"
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "operation": "availability",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "primary"
+        },
+        "timeMin": "={{$node[\"Policy Validate Slot\"].json.slot.queryStart ?? $node[\"Policy Validate Slot\"].json.slot.start}}",
+        "timeMax": "={{$node[\"Policy Validate Slot\"].json.slot.queryEnd ?? $node[\"Policy Validate Slot\"].json.slot.end}}",
+        "options": {
+          "outputFormat": "availability"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        -140
+      ],
+      "id": "availability-propose-node",
+      "name": "Google Calendar Availability (propose)",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "qb64I5w6gOhJGTp5",
+          "name": "Google Calendar account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"available\"]}}",
+              "operation": "equal",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        -140
+      ],
+      "id": "if-available-propose-node",
+      "name": "Available? (propose)"
+    },
+    {
+      "parameters": {
+        "functionCode": "const base = $node[\"Policy Validate Slot\"].json;\nconst slot = base.slot;\nconst state = base.state ?? {};\n\nconst newState = {\n  ...state,\n  phase: 'awaiting_confirm',\n  booking_intent: true,\n  pending_slot: {\n    start: slot.start,\n    end: slot.end,\n    queryStart: slot.queryStart,\n    queryEnd: slot.queryEnd,\n    label: slot.label,\n    durationMin: base.policy?.durationMinutes ?? 30,\n  },\n};\n\nconst reply = `I have ${slot.label} available. Should I book the 30min appointment?`;\n\nreturn [{ json: { reply, booking_intent: true, state: newState } }];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        -260
+      ],
+      "id": "propose-node",
+      "name": "Propose Confirm"
+    },
+    {
+      "parameters": {
+        "functionCode": "const base = $node[\"Policy Validate Slot\"].json;\nconst state = base.state ?? {};\n\nconst errMsg = ($json?.error?.message ?? $json?.message ?? '').toString();\nconst errName = ($json?.name ?? '').toString();\nconst looksLikeCred = /credential|oauth|unauthorized|forbidden/i.test(errMsg) || /credential/i.test(errName);\n\nif (looksLikeCred) {\n  return [{ json: { reply: 'Calendar is not connected. In n8n, select your Google Calendar credentials in the Calendar nodes.', booking_intent: true, state } }];\n}\n\nif ($json?.error || errName === 'NodeOperationError') {\n  const hint = errMsg ? ` (${errMsg})` : '';\n  return [{ json: { reply: `Calendar check failed${hint}. Please try again.`, booking_intent: true, state } }];\n}\n\nconst label = base.slot?.label ?? base.slot?.start ?? 'the slot';\nreturn [{ json: { reply: `${label} is busy. Please suggest an alternative (Mon–Fri 09:00–17:00).`, booking_intent: true, state } }];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        -20
+      ],
+      "id": "busy-propose-node",
+      "name": "Busy Reply (propose)"
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "operation": "availability",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "primary"
+        },
+        "timeMin": "={{$node[\"Route\"].json.state.pending_slot.queryStart ?? $node[\"Route\"].json.state.pending_slot.start}}",
+        "timeMax": "={{$node[\"Route\"].json.state.pending_slot.queryEnd ?? $node[\"Route\"].json.state.pending_slot.end}}",
+        "options": {
+          "outputFormat": "availability"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        220,
+        -240
+      ],
+      "id": "availability-confirm-node",
+      "name": "Google Calendar Availability (confirm)",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "qb64I5w6gOhJGTp5",
+          "name": "Google Calendar account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"available\"]}}",
+              "operation": "equal",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        440,
+        -240
+      ],
+      "id": "if-available-confirm-node",
+      "name": "Available? (confirm)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$node[\"Policy + Now\"].json.policy.createGoogleMeet === true}}",
+              "operation": "equal",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        560,
+        -460
+      ],
+      "id": "if-create-meet-node",
+      "name": "Create Google Meet?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify((() => {\n  const email = $node[\"Route\"].json.state?.contact?.email;\n  const name = $node[\"Route\"].json.state?.contact?.name;\n  const phone = $node[\"Route\"].json.state?.contact?.phone;\n  const note = $node[\"Route\"].json.state?.contact?.note;\n\n  const contactLines = [\n    name ? ('Name: ' + name) : null,\n    email ? ('Email: ' + email) : null,\n    phone ? ('Phone: ' + phone) : null,\n    note ? ('Note: ' + note) : null,\n  ].filter(Boolean).join('\\n');\n\n  const description = [\n    'Session: ' + ($node[\"Route\"].json.sessionId ?? 'n/a'),\n    'Message: ' + ($node[\"Route\"].json.message ?? ''),\n    contactLines || null,\n  ].filter(Boolean).join('\\n');\n\n  return {\n    summary: 'Booking (30min)' + (name ? (' - ' + name) : ''),\n    description,\n    start: {\n      dateTime: $node[\"Route\"].json.state.pending_slot.start,\n      timeZone: $node[\"Policy + Now\"].json.policy.tz,\n    },\n    end: {\n      dateTime: $node[\"Route\"].json.state.pending_slot.end,\n      timeZone: $node[\"Policy + Now\"].json.policy.tz,\n    },\n    reminders: { useDefault: true },\n    attendees: email ? [{ email }] : undefined,\n    conferenceData: {\n      createRequest: {\n        requestId: String($execution.id) + '-' + String($node[\"Route\"].json.state.pending_slot.start),\n        conferenceSolutionKey: { type: 'hangoutsMeet' },\n      },\n    },\n  };\n})())}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        660,
+        -520
+      ],
+      "id": "create-confirm-meet-http-node",
+      "name": "Create Calendar Event (Meet)",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "qb64I5w6gOhJGTp5",
+          "name": "Google Calendar account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify((() => {\n  const email = $node[\"Route\"].json.state?.contact?.email;\n  const name = $node[\"Route\"].json.state?.contact?.name;\n  const phone = $node[\"Route\"].json.state?.contact?.phone;\n  const note = $node[\"Route\"].json.state?.contact?.note;\n\n  const contactLines = [\n    name ? ('Name: ' + name) : null,\n    email ? ('Email: ' + email) : null,\n    phone ? ('Phone: ' + phone) : null,\n    note ? ('Note: ' + note) : null,\n  ].filter(Boolean).join('\\n');\n\n  const description = [\n    'Session: ' + ($node[\"Route\"].json.sessionId ?? 'n/a'),\n    'Message: ' + ($node[\"Route\"].json.message ?? ''),\n    contactLines || null,\n  ].filter(Boolean).join('\\n');\n\n  return {\n    summary: 'Booking (30min)' + (name ? (' - ' + name) : ''),\n    description,\n    start: {\n      dateTime: $node[\"Route\"].json.state.pending_slot.start,\n      timeZone: $node[\"Policy + Now\"].json.policy.tz,\n    },\n    end: {\n      dateTime: $node[\"Route\"].json.state.pending_slot.end,\n      timeZone: $node[\"Policy + Now\"].json.policy.tz,\n    },\n    reminders: { useDefault: true },\n    attendees: email ? [{ email }] : undefined,\n  };\n})())}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        660,
+        -430
+      ],
+      "id": "create-confirm-no-meet-http-node",
+      "name": "Create Calendar Event (No Meet)",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "qb64I5w6gOhJGTp5",
+          "name": "Google Calendar account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "create",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "primary"
+        },
+        "start": "={{$node[\"Route\"].json.state.pending_slot.start}}",
+        "end": "={{$node[\"Route\"].json.state.pending_slot.end}}",
+        "useDefaultReminders": true,
+        "additionalFields": {
+          "summary": "={{'Booking (30min)'}}",
+          "description": "={{(\n  'Session: ' + ($node[\"Route\"].json.sessionId ?? 'n/a') +\n  '\\nMessage: ' + ($node[\"Route\"].json.message ?? '') +\n  (($node[\"Route\"].json.state?.contact?.name ?? '') ? ('\\nName: ' + $node[\"Route\"].json.state.contact.name) : '') +\n  (($node[\"Route\"].json.state?.contact?.email ?? '') ? ('\\nEmail: ' + $node[\"Route\"].json.state.contact.email) : '') +\n  (($node[\"Route\"].json.state?.contact?.phone ?? '') ? ('\\nPhone: ' + $node[\"Route\"].json.state.contact.phone) : '') +\n  (($node[\"Route\"].json.state?.contact?.note ?? '') ? ('\\nNote: ' + $node[\"Route\"].json.state.contact.note) : '')\n)}}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        660,
+        -340
+      ],
+      "id": "create-confirm-node",
+      "name": "Create Calendar Event",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "qb64I5w6gOhJGTp5",
+          "name": "Google Calendar account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "const state = $node[\"Route\"].json.state ?? {};\nconst label = state?.pending_slot?.label ?? 'the slot';\n\nconst errMsg = ($json?.error?.message ?? $json?.message ?? '').toString();\nconst errName = ($json?.name ?? '').toString();\nconst looksLikeCred = /credential|oauth|unauthorized|forbidden/i.test(errMsg) || /credential/i.test(errName);\n\nif (looksLikeCred) {\n  const hint = 'In n8n, select the \"Google Calendar account\" credential in the \"Google Calendar Availability\" and \"Create Calendar Event\" nodes (and optionally \"Create Calendar Event (Meet)\"), and ensure the OAuth scopes are granted.';\n  return [{ json: { reply: `Could not book: ${hint}`, booking_intent: true, state } }];\n}\n\nif ($json?.error || errName === 'NodeOperationError') {\n  const hint = errMsg ? ` (${errMsg})` : '';\n  return [{ json: { reply: `Could not book${hint}. Please try again.`, booking_intent: true, state } }];\n}\n\nconst eventId = $json?.id;\n\nlet meetLink = null;\nif (typeof $json?.hangoutLink === 'string' && $json.hangoutLink.trim()) {\n  meetLink = $json.hangoutLink.trim();\n} else {\n  const entryPoints = $json?.conferenceData?.entryPoints;\n  if (Array.isArray(entryPoints)) {\n    const video = entryPoints.find((e) => e?.entryPointType === 'video' && typeof e?.uri === 'string' && e.uri.trim());\n    const any = entryPoints.find((e) => typeof e?.uri === 'string' && e.uri.trim());\n    meetLink = (video?.uri ?? any?.uri ?? null);\n    if (typeof meetLink === 'string') meetLink = meetLink.trim();\n  }\n}\n\nconst newState = { ...state, phase: 'booked', booked_event_id: eventId ?? null, booked_meet_link: meetLink, pending_slot: null };\n\nlet reply = `Booked: ${label} (30min).`;\nif (meetLink) reply += ` Meet: ${meetLink}`;\n\nreturn [{ json: { reply, booking_intent: true, state: newState } }];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        880,
+        -340
+      ],
+      "id": "booked-node",
+      "name": "Booked Reply"
+    },
+    {
+      "parameters": {
+        "functionCode": "const state = $node[\"Route\"].json.state ?? {};\nconst label = state?.pending_slot?.label ?? 'the slot';\n\nconst errMsg = ($json?.error?.message ?? $json?.message ?? '').toString();\nconst errName = ($json?.name ?? '').toString();\nconst looksLikeCred = /credential|oauth|unauthorized|forbidden/i.test(errMsg) || /credential/i.test(errName);\n\nif (looksLikeCred) {\n  return [{ json: { reply: 'Calendar is not connected. In n8n, select your Google Calendar credentials in the Calendar nodes.', booking_intent: true, state } }];\n}\n\nif ($json?.error || errName === 'NodeOperationError') {\n  const hint = errMsg ? ` (${errMsg})` : '';\n  return [{ json: { reply: `Calendar check failed${hint}. Please try again.`, booking_intent: true, state } }];\n}\n\nreturn [{ json: { reply: `${label} got booked in the meantime. Please suggest an alternative (Mon–Fri 09:00–17:00).`, booking_intent: true, state: { ...state, phase: 'idle', pending_slot: null } } }];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        660,
+        -120
+      ],
+      "id": "busy-confirm-node",
+      "name": "Busy Reply (confirm)"
+    },
+    {
+      "parameters": {
+        "functionCode": "const reply = $json.reply ?? 'OK';\nconst state = $json.state ?? {};\nconst booking_intent = $json.booking_intent ?? state.booking_intent ?? false;\n\nlet message = typeof $json.message === 'string' ? $json.message : undefined;\nlet policy = $json.policy && typeof $json.policy === 'object' ? $json.policy : undefined;\n\nlet transcript = typeof $json.transcript === 'string' ? $json.transcript : undefined;\n\nif ((!transcript || !transcript.trim()) || (!message || !message.trim()) || !policy) {\n  try {\n    const root = $node[\"Policy + Now\"]?.json;\n    if (root) {\n      if ((!transcript || !transcript.trim()) && typeof root.transcript === 'string' && root.transcript.trim()) transcript = root.transcript;\n      if ((!message || !message.trim()) && typeof root.message === 'string' && root.message.trim()) message = root.message;\n      if (!policy && root.policy && typeof root.policy === 'object') policy = root.policy;\n    }\n  } catch {\n    // ignore\n  }\n}\n\nconst payload = { reply, state, booking_intent };\nif (message && message.trim()) payload.message = message;\nif (policy) payload.policy = policy;\nif (transcript && transcript.trim()) payload.transcript = transcript;\n\nreturn [{ json: payload } ];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        880,
+        120
+      ],
+      "id": "finalize-node",
+      "name": "Finalize Response"
+    },
+    {
+      "parameters": {
+        "functionCode": "let transcript = typeof $json.transcript === 'string' ? $json.transcript : undefined;\nlet message = typeof $json.message === 'string' ? $json.message : undefined;\nlet policy = $json.policy && typeof $json.policy === 'object' ? $json.policy : undefined;\n\nif ((!transcript || !transcript.trim()) || (!message || !message.trim()) || !policy) {\n  try {\n    const root = $node[\"Policy + Now\"]?.json;\n    if (root) {\n      if ((!transcript || !transcript.trim()) && typeof root.transcript === 'string' && root.transcript.trim()) transcript = root.transcript;\n      if ((!message || !message.trim()) && typeof root.message === 'string' && root.message.trim()) message = root.message;\n      if (!policy && root.policy && typeof root.policy === 'object') policy = root.policy;\n    }\n  } catch {\n    // ignore\n  }\n}\n\nconst payload = { reply: $json.reply ?? 'OK', state: $json.state ?? {}, booking_intent: $json.booking_intent ?? false };\nif (message && message.trim()) payload.message = message;\nif (policy) payload.policy = policy;\nif (transcript && transcript.trim()) payload.transcript = transcript;\nreturn [{ json: payload }];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        660,
+        -20
+      ],
+      "id": "final-from-route-node",
+      "name": "Final (from Route)"
+    },
+    {
+      "parameters": {
+        "functionCode": "let transcript = typeof $json.transcript === 'string' ? $json.transcript : undefined;\n\nif (!transcript || !transcript.trim()) {\n  try {\n    const t = $node[\"Policy + Now\"]?.json?.transcript;\n    if (typeof t === 'string' && t.trim()) transcript = t;\n  } catch {\n    // ignore\n  }\n}\n\nif (!transcript || !transcript.trim()) {\n  try {\n    const t = $node[\"STT Parse\"]?.json?.transcript;\n    if (typeof t === 'string' && t.trim()) transcript = t;\n  } catch {\n    // ignore\n  }\n}\n\nconst payload = { reply: $json.reply ?? 'OK', state: $json.state ?? {}, booking_intent: $json.booking_intent ?? false };\nif (transcript && transcript.trim()) payload.transcript = transcript;\nreturn [{ json: payload }];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        120
+      ],
+      "id": "respond-node",
+      "name": "Respond"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify({\n  model: 'gpt-4o-mini',\n  temperature: 0.2,\n  messages: [\n    {\n      role: 'system',\n      content: [\n        'You generate the final user-facing reply for a booking agent.',\n        'You MUST write the reply in target_language and NEVER switch languages.',\n        'If target_language is missing: detect the language from user_message and use it.',\n        'If target_language starts with \"en\": write in English.',\n        'If target_language starts with \"de\": use informal \"du\" (not \"Sie\").',\n        'If target_language starts with \"zh\": write in Simplified Chinese by default.',\n        'The draft_reply may be in English. You MUST rewrite it into the target language.',\n        'You may answer short follow-up questions using policy (workdays/workStart/workEnd/horizonDays).',\n        'Preserve meaning and any dates/times.',\n        'Return ONLY strict JSON: {\"reply\": string}.',\n        'No markdown, no extra keys.'\n      ].join('\\n'),\n    },\n    {\n      role: 'user',\n      content: JSON.stringify({\n        target_language: ($json.state?.lang ?? null),\n        draft_reply: ($json.reply ?? ''),\n        user_message: ($json.message ?? ''),\n        policy: ($json.policy ?? {}),\n        state: ($json.state ?? {}),\n      }),\n    },\n  ],\n  response_format: { type: 'json_object' },\n})}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1320,
+        120
+      ],
+      "id": "response-writer-http-node",
+      "name": "LLM #4 (Response Writer)",
+      "credentials": {
+        "openAiApi": {
+          "id": "YrieF7VxwKqYVkuk",
+          "name": "OpenAi account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "const base = $node[\"Finalize Response\"].json;\nconst original = base.reply ?? 'OK';\n\nif ($json?.error?.message) {\n  return [{ json: { ...base, reply: original } }];\n}\n\nconst content = $json.choices?.[0]?.message?.content;\nlet parsed;\ntry {\n  parsed = JSON.parse((content ?? '').toString());\n} catch {\n  return [{ json: { ...base, reply: original } }];\n}\n\nconst reply = typeof parsed?.reply === 'string' && parsed.reply.trim() ? parsed.reply : original;\nreturn [{ json: { ...base, reply } }];"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        120
+      ],
+      "id": "apply-response-writer-node",
+      "name": "Apply Response Writer"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook (voice)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Voice Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Voice Input": {
+      "main": [
+        [
+          {
+            "node": "STT (OpenAI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "STT (OpenAI)": {
+      "main": [
+        [
+          {
+            "node": "STT Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "STT Parse": {
+      "main": [
+        [
+          {
+            "node": "Has Transcript?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Transcript?": {
+      "main": [
+        [
+          {
+            "node": "Policy + Now",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Voice Transcribe Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice Transcribe Failed": {
+      "main": [
+        [
+          {
+            "node": "Finalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Input": {
+      "main": [
+        [
+          {
+            "node": "Policy + Now",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Policy + Now": {
+      "main": [
+        [
+          {
+            "node": "LLM #1 (Decider)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM #1 (Decider)": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "Route: Confirm?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Confirm?": {
+      "main": [
+        [
+          {
+            "node": "Google Calendar Availability (confirm)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route: Parse?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Parse?": {
+      "main": [
+        [
+          {
+            "node": "LLM #2 (Datetime Parser)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route: Ask Datetime?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Ask Datetime?": {
+      "main": [
+        [
+          {
+            "node": "Final (from Route)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Final (from Route)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Datetime": {
+      "main": [
+        [
+          {
+            "node": "Finalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final (from Route)": {
+      "main": [
+        [
+          {
+            "node": "Finalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM #2 (Datetime Parser)": {
+      "main": [
+        [
+          {
+            "node": "Parser Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parser Output": {
+      "main": [
+        [
+          {
+            "node": "Policy Validate Slot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Policy Validate Slot": {
+      "main": [
+        [
+          {
+            "node": "Google Calendar Availability (propose)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Calendar Availability (propose)": {
+      "main": [
+        [
+          {
+            "node": "Available? (propose)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Available? (propose)": {
+      "main": [
+        [
+          {
+            "node": "Propose Confirm",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Busy Reply (propose)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Propose Confirm": {
+      "main": [
+        [
+          {
+            "node": "Finalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busy Reply (propose)": {
+      "main": [
+        [
+          {
+            "node": "Finalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Calendar Availability (confirm)": {
+      "main": [
+        [
+          {
+            "node": "Available? (confirm)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Available? (confirm)": {
+      "main": [
+        [
+          {
+            "node": "Create Google Meet?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Busy Reply (confirm)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Google Meet?": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Event (Meet)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Calendar Event (No Meet)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Calendar Event (Meet)": {
+      "main": [
+        [
+          {
+            "node": "Booked Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Calendar Event (No Meet)": {
+      "main": [
+        [
+          {
+            "node": "Booked Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Booked Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Booked Reply": {
+      "main": [
+        [
+          {
+            "node": "Finalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busy Reply (confirm)": {
+      "main": [
+        [
+          {
+            "node": "Finalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Response": {
+      "main": [
+        [
+          {
+            "node": "LLM #4 (Response Writer)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM #4 (Response Writer)": {
+      "main": [
+        [
+          {
+            "node": "Apply Response Writer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Response Writer": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

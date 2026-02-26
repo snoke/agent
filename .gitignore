@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+
+.DS_Store
+
+frontend/node_modules/
+frontend/dist/
+
+n8n_data/

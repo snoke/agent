@@ -1,0 +1,10 @@
+FROM node:20-alpine
+
+WORKDIR /var/www/html
+
+# Keep it simple for dev: deps are installed at container start (volume-mounted code).
+RUN npm config set fund false && npm config set audit false
+
+EXPOSE 5173
+
+CMD ["sh", "-lc", "npm install && npm run dev -- --host 0.0.0.0 --port 5173"]
