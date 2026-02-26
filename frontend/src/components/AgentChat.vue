@@ -37,8 +37,8 @@ const agentState = ref<unknown>(null)
 const messages = ref<ChatMessage[]>([
   {
     id: randomId(),
-    role: 'system',
-    text: 'Agent chat ready. If you use /webhook-test/... you must click "Execute workflow" in n8n before sending (often single-call). For stable usage activate the workflow and use /webhook/agent-chat.',
+    role: 'agent',
+    text: 'Hi, ich bin Agent! KI-Assistent von Stefan. Ich kann dir dabei helfen, ein kurzes Meeting zu arrangieren.',
   },
 ])
 
