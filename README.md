@@ -35,6 +35,7 @@ Voice input:
 Agent context:
 - Put extra system context in `context.txt`.
 - The container mounts it to `AGENT_CONTEXT_FILE` (default: `/opt/agent/context.txt`) and injects it into the decider LLM system prompt.
+- Requires `NODE_FUNCTION_ALLOW_BUILTIN=fs` (see `.env.example`) so n8n Function nodes can read the file.
 
 ### Voice-Lead-Agent.full.json requirements
 
