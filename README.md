@@ -21,11 +21,8 @@ Important (n8n “test” vs “production” webhooks):
 - `/webhook-test/...` works only after you click **Execute workflow** in the n8n editor (usually for a single call).
 - For a stable endpoint use `/webhook/agent-chat-confirm` and **activate** the workflow.
 
-Workflows in this repo:
-- `Voice-Lead-Agent.json`: minimal echo (always responds)
-- `Voice-Lead-Agent.full.json`: LLM + booking that auto-creates Google Calendar events (30min) once the user provides a weekday + time
-- `Voice-Lead-Agent.compact.json`: compact pattern (1 LLM call) on webhook path `/webhook/agent-chat-compact`
-- `Voice-Lead-Agent.confirm.json`: 3 LLM calls (decider + datetime parser + response writer) with confirmation step on `/webhook/agent-chat-confirm` + voice input on `/webhook/agent-chat-confirm-voice`
+Workflow in this repo:
+- `Voice-Lead-Agent.confirm.json`: decider + datetime parser + response writer with confirmation step on `/webhook/agent-chat-confirm` + voice input on `/webhook/agent-chat-confirm-voice`
 
 Voice input:
 - The frontend has a **Voice** button that records from the microphone and sends audio to `/webhook/agent-chat-confirm-voice`.
@@ -37,35 +34,10 @@ Agent context:
 - The container mounts it to `AGENT_CONTEXT_FILE` (default: `/opt/agent/context.txt`) and injects it into the decider LLM system prompt.
 - Requires `NODE_FUNCTION_ALLOW_BUILTIN=fs` (see `.env.example`) so n8n Function nodes can read the file.
 
-### Voice-Lead-Agent.full.json requirements
+### Workflow requirements
 
-- In n8n, open the workflow and in **OpenAI (HTTP)** set:
-  - Authentication: `Predefined Credential Type`
-  - Credential Type: `OpenAI`
-  - Select your credential (e.g. “OpenAi account”)
-- Connect Google Calendar credentials in n8n for:
-  - **Google Calendar Availability**
-  - **Create Calendar Event**
-
-### Minimal echo workflow (fast setup)
-
-In n8n (`http://localhost:5678`):
-
-1. Create a new workflow
-2. Add **Webhook** node
-   - HTTP Method: `POST`
-   - Path: `agent-chat`
-   - (Test URL contains `/webhook-test/...` by default in n8n)
-   - Response Mode: `Using 'Respond to Webhook' node`
-3. Add **Set** node (or **Code** node) to create a `reply` field
-   - e.g. `reply = {{$json.body.message}}`
-4. Add **Respond to Webhook** node
-   - Respond With: `First Incoming Item`
-5. Activate the workflow
-
-### Real AI replies (optional)
-
-Create an OpenAI credential in n8n (Credentials → OpenAI) and use it in **HTTP Request** nodes (Authentication: `Predefined Credential Type`, Credential Type: `OpenAI`).
+- Create an OpenAI credential in n8n (Credentials → OpenAI) and ensure the workflow nodes reference it.
+- Connect Google Calendar credentials in n8n for the Google Calendar nodes.
 
 ## Configuration (optional)
 
