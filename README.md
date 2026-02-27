@@ -9,11 +9,20 @@ A small Vue frontend is included **only as an example UI**.
 ## Workflow
 
 Workflow file in this repo:
-- `Voice-Lead-Agent.confirm.json` (Decider + Datetime Parser + Response Writer, confirmation step, calendar availability + booking, optional Google Meet)
+- `Voice-Lead-Agent.confirm.json` (Decider + Datetime Parser + Response Writer, confirmation step, Google Calendar availability checks + booking, optional slot suggestions, Google Meet link)
+
+Workflow overview:
+
+![n8n workflow](Docs/workflow.png)
 
 n8n “test” vs “production” webhooks:
 - `/webhook-test/...` works only after you click **Execute workflow** in the editor.
 - Use `/webhook/...` + **activate** the workflow for stable URLs.
+
+What the workflow does:
+- Checks availability via **Google Calendar** before proposing or booking a slot
+- Can **suggest free time slots** (based on your configured working hours)
+- Books the event and can attach a **Google Meet** link
 
 ## Quickstart (local)
 
