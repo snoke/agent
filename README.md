@@ -23,6 +23,7 @@ What the workflow does:
 - Checks availability via **Google Calendar** before proposing or booking a slot
 - Can **suggest free time slots** (based on your configured working hours)
 - Books the event and can attach a **Google Meet** link
+- Sends a **Google Calendar invitation email** to attendees (if an attendee email is collected/configured)
 
 ## Quickstart (local)
 
