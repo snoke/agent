@@ -104,7 +104,7 @@ fi
 
 echo "Applying workflow to n8n (id: $WORKFLOW_ID)..."
 
-docker cp "$WORKFLOW_FILE" challenge_n8n:/tmp/Voice-Lead-Agent.confirm.json
+docker compose cp "$WORKFLOW_FILE" n8n:/tmp/Voice-Lead-Agent.confirm.json
 docker compose exec -T n8n n8n import:workflow --input=/tmp/Voice-Lead-Agent.confirm.json
 docker compose exec -T n8n n8n publish:workflow --id="$WORKFLOW_ID"
 docker compose restart n8n
