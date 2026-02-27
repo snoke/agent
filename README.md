@@ -1,57 +1,78 @@
-# Challenge: Vue + n8n
+# n8n booking agent (workflow-first)
 
-This repo runs a Vue 3 frontend (Vite) and an n8n instance as the backend.
+This repo is primarily an **n8n workflow** that runs a booking agent on top of Google Calendar + OpenAI:
+- Text webhook: `POST /webhook/agent-chat-confirm`
+- Voice webhook: `POST /webhook/agent-chat-confirm-voice` (OpenAI speech-to-text → same flow)
 
-## Quickstart
+A small Vue frontend is included **only as an example UI**.
 
-1. `docker compose up --build`
-2. Open:
-   - Frontend: `http://localhost:8080`
-   - n8n: `http://localhost:5678`
+## Workflow
 
-## Agent Chat (n8n Webhook)
+Workflow file in this repo:
+- `Voice-Lead-Agent.confirm.json` (Decider + Datetime Parser + Response Writer, confirmation step, calendar availability + booking, optional Google Meet)
 
-The frontend chat calls an n8n webhook (default: `http://localhost:5678/webhook/agent-chat-confirm`) and expects JSON:
+n8n “test” vs “production” webhooks:
+- `/webhook-test/...` works only after you click **Execute workflow** in the editor.
+- Use `/webhook/...` + **activate** the workflow for stable URLs.
+
+## Quickstart (local)
+
+1. Copy env file:
+   - `cp .env.example .env`
+2. Start services:
+   - `docker compose up -d --build`
+3. Open n8n:
+   - `http://localhost:5678`
+4. Import/apply the workflow (pick one):
+   - Recommended: `bash scripts/sync-agent-context.sh`
+   - Manual: import `Voice-Lead-Agent.confirm.json` via the n8n UI
+5. In n8n, create/select credentials and assign them to the workflow nodes:
+   - **OpenAI** (Credentials → OpenAI) for the `LLM ...` and `STT (OpenAI)` HTTP nodes
+   - **Google Calendar** for the calendar availability + create-event nodes
+   - After importing, you typically need to open these nodes once to select credentials (imported credential IDs won’t match your instance).
+6. Activate the workflow.
+
+## Calling the agent
+
+Text webhook:
+- `POST http://localhost:5678/webhook/agent-chat-confirm`
+
+Example payload:
 
 ```json
-{ "reply": "..." }
+{ "text": "Book next Wednesday 11:45", "sessionId": "session_123", "state": null, "context": {} }
 ```
 
-Important (n8n “test” vs “production” webhooks):
-- `/webhook-test/...` works only after you click **Execute workflow** in the n8n editor (usually for a single call).
-- For a stable endpoint use `/webhook/agent-chat-confirm` and **activate** the workflow.
+Voice webhook:
+- `POST http://localhost:5678/webhook/agent-chat-confirm-voice`
 
-Workflow in this repo:
-- `Voice-Lead-Agent.confirm.json`: decider + datetime parser + response writer with confirmation step on `/webhook/agent-chat-confirm` + voice input on `/webhook/agent-chat-confirm-voice`
+Payload fields:
+- `audio_base64`, `mimeType`, `fileName`, `sessionId`, `state`, `context`
 
-Voice input:
-- The frontend has a **Voice** button that records from the microphone and sends audio to `/webhook/agent-chat-confirm-voice`.
-- The workflow transcribes via OpenAI speech-to-text and then continues through the normal text agent flow.
-- Requires an OpenAI credential in n8n (Credentials → OpenAI) referenced by the workflow nodes.
+## Agent context
 
-Agent context:
-- The workflow contains an `Agent Context` node that stores the system context string.
-- Edit that node in n8n if you want to change what the agent knows/should say.
+Edit `context.txt`, then run:
+- `bash scripts/sync-agent-context.sh`
 
-### Workflow requirements
+This syncs `context.txt` into the workflow node `Agent Context` and reapplies the workflow to the local n8n container.
 
-- Create an OpenAI credential in n8n (Credentials → OpenAI) and ensure the workflow nodes reference it.
-- Connect Google Calendar credentials in n8n for the Google Calendar nodes.
+## Configuration
 
-## Configuration (optional)
-
-Copy `.env.example` to `.env` and adjust values if needed.
-
-Note: `docker-compose.yml` passes `.env` into the n8n container via `env_file`, so changes require recreating the container:
+`.env` is mounted into the n8n container (`env_file: .env`). After changing `.env`:
 - `docker compose up -d --force-recreate n8n`
 
-Booking policy defaults:
-- Timezone: `AGENT_TZ` / `TZ` (default `Europe/Berlin`)
-- Workdays: `AGENT_WORKDAYS` (default `1,2,3,4,5` = Mon–Fri)
-- Working hours: `AGENT_WORK_START`–`AGENT_WORK_END` (default `09:00`–`17:00`)
-- Horizon: `AGENT_HORIZON_DAYS` (default `30`)
-- Google Meet link on bookings: `CREATE_GOOGLE_MEET` (default `true`)
-- Required fields before booking: `REQUIRE_INPUT` (comma-separated, e.g. `email,name`)
-- Optional fields to ask before booking: `OPTIONAL_INPUT` (comma-separated, e.g. `note,name`)
+Booking policy env vars (see `.env.example`):
+- `AGENT_TZ`, `AGENT_WORKDAYS`, `AGENT_WORK_START`, `AGENT_WORK_END`
+- `AGENT_HORIZON_DAYS`, `AGENT_MIN_LEAD_HOURS`
+- `REQUIRE_INPUT` / `OPTIONAL_INPUT` (any mix of `email,name,phone,note`)
+- `CREATE_GOOGLE_MEET`
+- `AGENT_STT_MODEL`
 
-Note: This setup enables `$env` access in n8n via `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` for local development.
+Note: `$env` access in workflow nodes is enabled via `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` for local dev.
+
+## Frontend (example UI)
+
+Optional demo UI:
+- `http://localhost:8080`
+
+It simply calls the n8n webhooks above. Replace it with any client.
